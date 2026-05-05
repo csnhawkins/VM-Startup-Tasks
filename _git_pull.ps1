@@ -5,7 +5,7 @@
 # ============================================================
 
 $LogFile  = "C:\git\Admin\logs\00_git_pull.log"
-$RepoPath = "C:\git\Admin\vm-startup-scripts"
+$RepoPath = "C:\git\Admin\VM-Startup-Tasks"
 
 New-Item -Path "C:\git\Admin\logs" -ItemType Directory -Force | Out-Null
 
