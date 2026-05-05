@@ -1,14 +1,13 @@
-$allowedMachine = "WIN2016"
-$currentMachine = $env:COMPUTERNAME
-
-if ($currentMachine -ne $allowedMachine) {
-    Write-Host "Not running cleanup. Machine name = $currentMachine"
-    Write-Host "Press any key to exit..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    return
+# VM config check
+if ($env:VM_CONFIG -ne 'SalesDemo_Containerized') {
+    Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
+    Write-Host "VM_CONFIG is '$env:VM_CONFIG' — expected 'SalesDemo_Containerized'" -ForegroundColor Yellow
+    Write-Host "        Set VM_CONFIG and reboot, then try again." -ForegroundColor DarkGray
+    Write-Log "Wrong VM_CONFIG: '$env:VM_CONFIG'"
+    exit 0
 }
 
-Write-Host "Running cleanup on approved machine: $currentMachine"
+Write-Host "Running cleanup on approved machine: $env:VM_CONFIG"
 Write-Host ""
 
 Write-Host "Deleting environment variable REDGATE_LICENSING_PERMIT_PATH..."
