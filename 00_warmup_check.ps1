@@ -7,6 +7,33 @@
 # so moving the window does not break the display.
 # ============================================================
 
+# Disable QuickEdit mode to prevent window freeze when clicked/moved
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class ConsoleHelper {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll")]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll")]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+    public const int STD_INPUT_HANDLE = -10;
+    public const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+    public const uint ENABLE_EXTENDED_FLAGS = 0x0080;
+}
+"@
+try {
+    $handle = [ConsoleHelper]::GetStdHandle([ConsoleHelper]::STD_INPUT_HANDLE)
+    $mode = 0
+    [ConsoleHelper]::GetConsoleMode($handle, [ref]$mode) | Out-Null
+    $mode = $mode -band (-bnot [ConsoleHelper]::ENABLE_QUICK_EDIT_MODE)
+    $mode = $mode -bor [ConsoleHelper]::ENABLE_EXTENDED_FLAGS
+    [ConsoleHelper]::SetConsoleMode($handle, $mode) | Out-Null
+} catch {
+    # Ignore errors if console mode cannot be set
+}
+
 $LogFile    = "C:\git\Admin\logs\00_warmup.log"
 $MaxMinutes = 15
 $PollSecs   = 3
@@ -55,7 +82,7 @@ function Write-ProgressLine {
     $empty   = $BarWidth - $filled
     $bar     = ([string][char]0x2588 * $filled) + ([string][char]0x2591 * $empty)
     $pct     = "$([Math]::Floor($progress))%".PadLeft(4)
-    $elapsed = [TimeSpan]::FromSeconds($ElapsedSecs).ToString("mm\:ss")
+    $elapsed = [TimeSpan]::FromSeconds($ElapsedSecs).ToString('mm\:ss')
 
     # Calculate ETA based on progress rate
     $eta = if ($ElapsedSecs -gt 10 -and $progress -gt 5 -and $progress -lt 99) {
@@ -66,7 +93,7 @@ function Write-ProgressLine {
         if ($etaSecs -lt 60) {
             "ETA <1 min  "
         } else {
-            "ETA " + $etaTime.ToString("m\m\ s\s").PadRight(8)
+            "ETA " + $etaTime.ToString('m\m\ s\s').PadRight(8)
         }
     } else {
         "            "
@@ -143,7 +170,7 @@ while (-not $Warmed) {
 $TotalSecs = [int](New-TimeSpan -Start $StartTime -End (Get-Date)).TotalSeconds
 $TotalMins = [Math]::Floor($TotalSecs / 60)
 $TotalSec2 = $TotalSecs % 60
-$TotalTime = [TimeSpan]::FromSeconds($TotalSecs).ToString("mm\:ss")
+$TotalTime = [TimeSpan]::FromSeconds($TotalSecs).ToString('mm\:ss')
 $doneBar   = [string][char]0x2588 * $BarWidth
 
 # Overwrite progress line with completed bar
