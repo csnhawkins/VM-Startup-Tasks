@@ -9,11 +9,15 @@ REM ============================================================
 
 set SCRIPT_DIR=%~dp0
 
-REM Step 1 — Git pull to get latest versions of all scripts
-echo Pulling latest scripts from Git...
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "%SCRIPT_DIR%_git_pull.ps1"
+REM Step 1 — Check if EBS has warmed up
+echo Checking if Server has warmed up...
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "%SCRIPT_DIR%00_warmup_check.ps1"
 
-REM Step 2 — Run all numbered scripts in order
+REM Step 2 — Git pull to get latest versions of all scripts
+echo Pulling latest scripts from Git...
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "%SCRIPT_DIR%00_git_pull.ps1"
+
+REM Step 3 — Run all numbered scripts in order
 REM The for loop picks up any new scripts added to Git automatically
 for %%f in ("%SCRIPT_DIR%??.ps1" "%SCRIPT_DIR%??_*.ps1") do (
     pwsh.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File "%%f"
