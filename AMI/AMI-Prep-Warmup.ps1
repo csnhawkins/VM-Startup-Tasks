@@ -7,7 +7,8 @@
 # ============================================================
 
 # Disable QuickEdit mode to prevent window freeze when clicked/moved
-Add-Type -TypeDefinition @"
+if (-not ([System.Management.Automation.PSTypeName]'ConsoleHelper').Type) {
+    Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public class ConsoleHelper {
@@ -21,7 +22,8 @@ public class ConsoleHelper {
     public const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
     public const uint ENABLE_EXTENDED_FLAGS = 0x0080;
 }
-"@
+'@
+}
 try {
     $handle = [ConsoleHelper]::GetStdHandle([ConsoleHelper]::STD_INPUT_HANDLE)
     $mode = 0
