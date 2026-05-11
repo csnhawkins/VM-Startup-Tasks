@@ -15,6 +15,18 @@ function Write-Log {
     "$ts  $Message" | Out-File -FilePath $LogFile -Append
 }
 
+function Test-AwsCredentials {
+    try {
+        $creds = aws sts get-caller-identity --query "Account" --output text 2>$null
+        if ($creds) {
+            return $true
+        }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
 # VM config check
 if ($env:VM_CONFIG -ne 'SalesDemo_Containerized') {
     Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
@@ -74,9 +86,15 @@ try {
 
 # ── Step 4: If no CFN stack tag, check whether this is the Build EC2 ─────────
 if ($StackName -eq "unknown" -and $InstanceId -ne "unknown") {
-    Write-Log "No CFN stack tag — checking for Build EC2 via AWS CLI..."
+    if (-not (Test-AwsCredentials)) {
+        Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
+        Write-Host "AWS credentials not available — cannot check if this is Build EC2" -ForegroundColor Yellow
+        Write-Host "        Attach an IAM role with ECS/EC2 permissions, then rerun scripts." -ForegroundColor DarkGray
+        Write-Log "AWS credentials not available — Build EC2 check skipped"
+    } else {
+        Write-Log "No CFN stack tag — checking for Build EC2 via AWS CLI..."
 
-    try {
+        try {
         $allTags = aws ec2 describe-tags `
             --filters "Name=resource-id,Values=$InstanceId" `
             --query   "Tags" `
@@ -107,6 +125,7 @@ if ($StackName -eq "unknown" -and $InstanceId -ne "unknown") {
         }
     } catch {
         Write-Log "AWS CLI tag lookup failed: $($_.Exception.Message)"
+    }
     }
 }
 

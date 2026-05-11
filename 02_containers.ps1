@@ -17,12 +17,33 @@ function Write-Log {
     "$ts  $Message" | Out-File -FilePath $LogFile -Append
 }
 
+function Test-AwsCredentials {
+    try {
+        $creds = aws sts get-caller-identity --query "Account" --output text 2>$null
+        if ($creds) {
+            return $true
+        }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
 # Read session.json
 $Session = Get-Content $SessionFile -Raw | ConvertFrom-Json
 $StackName        = $Session.StackName
 $IsBuildEc2       = $Session.IsBuildEc2
 $BuildContainerArns = $Session.BuildContainerArns
 $SelectedEngines  = $Session.SelectedEngines
+
+# Check AWS credentials are available
+if (-not (Test-AwsCredentials)) {
+    Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
+    Write-Host "AWS credentials not available — cannot look up container IPs" -ForegroundColor Yellow
+    Write-Host "        Attach an IAM role with ECS/EC2 permissions, then rerun scripts." -ForegroundColor DarkGray
+    Write-Log "AWS credentials not available — cannot proceed"
+    exit 1
+}
 
 $EngineIpMap  = @{}
 $EngineArnMap = @{}
