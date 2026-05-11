@@ -19,64 +19,100 @@ function Write-Log {
 
 # Read session.json
 $Session = Get-Content $SessionFile -Raw | ConvertFrom-Json
-$StackName       = $Session.StackName
-$SelectedEngines = $Session.SelectedEngines
-
-if (-not $StackName -or $StackName -eq "unknown") {
-    Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
-    Write-Host "Stack name not found — skipping container lookup" -ForegroundColor Yellow
-    Write-Log "No stack name available"
-    exit 0
-}
-
-Write-Log "===== Finding containers for stack: $StackName ====="
-Write-Host "  >>  " -NoNewline -ForegroundColor Red
-Write-Host "Finding database containers..."
-
-$TaskArns = aws ecs list-tasks `
-    --cluster $Cluster `
-    --region $Region `
-    --desired-status RUNNING `
-    --query "taskArns" `
-    --output json 2>$null | ConvertFrom-Json
+$StackName        = $Session.StackName
+$IsBuildEc2       = $Session.IsBuildEc2
+$BuildContainerArns = $Session.BuildContainerArns
+$SelectedEngines  = $Session.SelectedEngines
 
 $EngineIpMap  = @{}
 $EngineArnMap = @{}
 
-foreach ($Arn in $TaskArns) {
-    $Tags = aws ecs list-tags-for-resource `
-        --resource-arn $Arn `
-        --region $Region `
-        --query "tags" `
-        --output json 2>$null | ConvertFrom-Json
+# ── Build EC2 scenario: use pre-recorded task ARNs ──────────────────────────
+if ($IsBuildEc2 -and $BuildContainerArns -and $BuildContainerArns.PSObject.Properties.Count -gt 0) {
+    Write-Log "===== Lookup mode: Build EC2 (using BuildContainerArns) ====="
+    Write-Host "  >>  " -NoNewline -ForegroundColor Red
+    Write-Host "Finding database containers (Build EC2)..."
 
-    $StackTag  = $Tags | Where-Object { $_.key -eq "StackName" -and $_.value -eq $StackName }
-    $EngineTag = $Tags | Where-Object { $_.key -eq "Engine" }
+    foreach ($Engine in $BuildContainerArns.PSObject.Properties.Name) {
+        $Arn = $BuildContainerArns.$Engine
 
-    if ($StackTag -and $EngineTag) {
-        $Details  = aws ecs describe-tasks `
-            --cluster $Cluster `
-            --tasks $Arn `
-            --region $Region `
-            --query "tasks[0].attachments[0].details" `
-            --output json 2>$null | ConvertFrom-Json
+        try {
+            $Details = aws ecs describe-tasks `
+                --cluster $Cluster `
+                --tasks $Arn `
+                --region $Region `
+                --query "tasks[0].attachments[0].details" `
+                --output json 2>$null | ConvertFrom-Json
 
-        $IpDetail = $Details | Where-Object { $_.name -eq "privateIPv4Address" }
+            $IpDetail = $Details | Where-Object { $_.name -eq "privateIPv4Address" }
 
-        if ($IpDetail) {
-            $Engine              = $EngineTag.value
-            $EngineIpMap[$Engine]  = $IpDetail.value
-            $EngineArnMap[$Engine] = $Arn
-            Write-Host "  OK  " -NoNewline -ForegroundColor Green
-            Write-Host "$Engine container found  ($($IpDetail.value))" -ForegroundColor Gray
-            Write-Log "$Engine -> $($IpDetail.value)"
+            if ($IpDetail) {
+                $EngineIpMap[$Engine]  = $IpDetail.value
+                $EngineArnMap[$Engine] = $Arn
+                Write-Host "  OK  " -NoNewline -ForegroundColor Green
+                Write-Host "$Engine container found  ($($IpDetail.value))" -ForegroundColor Gray
+                Write-Log "$Engine -> $($IpDetail.value)"
+            }
+        } catch {
+            Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
+            Write-Host "Failed to describe task for $Engine" -ForegroundColor Yellow
+            Write-Log "Error describing task $Arn for $Engine : $($_.Exception.Message)"
         }
     }
+}
+# ── Normal stack scenario: search by StackName tag ────────────────────────────
+elseif ($StackName -and $StackName -ne "unknown") {
+    Write-Log "===== Lookup mode: CloudFormation Stack ($StackName) ====="
+    Write-Host "  >>  " -NoNewline -ForegroundColor Red
+    Write-Host "Finding database containers..."
+
+    $TaskArns = aws ecs list-tasks `
+        --cluster $Cluster `
+        --region $Region `
+        --desired-status RUNNING `
+        --query "taskArns" `
+        --output json 2>$null | ConvertFrom-Json
+
+    foreach ($Arn in $TaskArns) {
+        $Tags = aws ecs list-tags-for-resource `
+            --resource-arn $Arn `
+            --region $Region `
+            --query "tags" `
+            --output json 2>$null | ConvertFrom-Json
+
+        $StackTag  = $Tags | Where-Object { $_.key -eq "StackName" -and $_.value -eq $StackName }
+        $EngineTag = $Tags | Where-Object { $_.key -eq "Engine" }
+
+        if ($StackTag -and $EngineTag) {
+            $Details  = aws ecs describe-tasks `
+                --cluster $Cluster `
+                --tasks $Arn `
+                --region $Region `
+                --query "tasks[0].attachments[0].details" `
+                --output json 2>$null | ConvertFrom-Json
+
+            $IpDetail = $Details | Where-Object { $_.name -eq "privateIPv4Address" }
+
+            if ($IpDetail) {
+                $Engine              = $EngineTag.value
+                $EngineIpMap[$Engine]  = $IpDetail.value
+                $EngineArnMap[$Engine] = $Arn
+                Write-Host "  OK  " -NoNewline -ForegroundColor Green
+                Write-Host "$Engine container found  ($($IpDetail.value))" -ForegroundColor Gray
+                Write-Log "$Engine -> $($IpDetail.value)"
+            }
+        }
+    }
+} else {
+    Write-Host "  !!  " -NoNewline -ForegroundColor Yellow
+    Write-Host "Stack name not found and not a Build EC2 — skipping container lookup" -ForegroundColor Yellow
+    Write-Log "No stack name available and IsBuildEc2 is false"
+    exit 0
 }
 
 if ($EngineIpMap.Count -eq 0) {
     Write-Host "  XX  " -NoNewline -ForegroundColor Red
-    Write-Host "Could not find any containers for stack: $StackName" -ForegroundColor Red
+    Write-Host "Could not find any containers" -ForegroundColor Red
     Write-Log "ERROR: No containers found"
     exit 1
 }
